@@ -39,14 +39,186 @@ impl Interpreter {
         let _ = env;
         match e {
             // ---- M1: expressions ----
-            Expr::Lit(..) => todo_m1!("E-Lit"),
-            Expr::Unary(..) => todo_m1!("E-Neg / E-Not (ref & deref join at M3)"),
-            Expr::Binary(..) => {
-                todo_m1!("E-Arith / E-Ord / E-Eq / E-And / E-Or / E-Concat / E-Cons")
+            Expr::Lit(lit, _span) => {
+                let v = match lit {
+                    crate::ast::Lit::Int(i) => Value::Int(*i),
+                    crate::ast::Lit::Bool(b) => Value::Bool(*b),
+                    crate::ast::Lit::Str(s) => Value::Str(s.clone().into()),
+                    crate::ast::Lit::Unit => Value::Unit,
+                };
+                Ok(v)
             }
-            Expr::Tuple(..) => todo_m1!("E-Tuple"),
-            Expr::List(..) => todo_m1!("E-List"),
-            Expr::Proj(..) => todo_m1!("E-Proj (tuple projection)"),
+            Expr::Unary(op, sub, span) => {
+                let v = self.eval_expr(sub, env)?;
+                match (op, v) {
+                    (crate::ast::UnOp::Neg, Value::Int(i)) => Ok(Value::Int(i.wrapping_neg())),
+                    (crate::ast::UnOp::Not, Value::Bool(b)) => Ok(Value::Bool(!b)),
+                    (crate::ast::UnOp::Neg, other) => {
+                        Err(crate::interp::error::RuntimeError::TypeError {
+                            expected: crate::ast::Ty::int(),
+                            found: crate::interp::value::type_of(&other),
+                            span: *span, // was sub.span()
+                        }
+                        .into())
+                    }
+                    (crate::ast::UnOp::Not, other) => {
+                        Err(crate::interp::error::RuntimeError::TypeError {
+                            expected: crate::ast::Ty::bool(),
+                            found: crate::interp::value::type_of(&other),
+                            span: *span, // was sub.span()
+                        }
+                        .into())
+                    }
+                    (crate::ast::UnOp::Ref, _) | (crate::ast::UnOp::Deref, _) => {
+                        todo_m3!("E-Ref / E-Deref")
+                    }
+                }
+            }
+            Expr::Binary(op, lhs, rhs, span) => {
+                use crate::ast::BinOp::*;
+                use crate::ast::Ty;
+                use crate::interp::error::RuntimeError;
+                use crate::interp::value::{type_of, List};
+
+                if matches!(op, And) {
+                    return match self.eval_expr(lhs, env)? {
+                        Value::Bool(false) => Ok(Value::Bool(false)),
+                        Value::Bool(true) => match self.eval_expr(rhs, env)? {
+                            Value::Bool(b) => Ok(Value::Bool(b)),
+                            other => Err(RuntimeError::TypeError {
+                                expected: Ty::bool(),
+                                found: type_of(&other),
+                                span: *span,
+                            }
+                            .into()),
+                        },
+                        other => Err(RuntimeError::TypeError {
+                            expected: Ty::bool(),
+                            found: type_of(&other),
+                            span: *span,
+                        }
+                        .into()),
+                    };
+                }
+                if matches!(op, Or) {
+                    return match self.eval_expr(lhs, env)? {
+                        Value::Bool(true) => Ok(Value::Bool(true)),
+                        Value::Bool(false) => match self.eval_expr(rhs, env)? {
+                            Value::Bool(b) => Ok(Value::Bool(b)),
+                            other => Err(RuntimeError::TypeError {
+                                expected: Ty::bool(),
+                                found: type_of(&other),
+                                span: *span,
+                            }
+                            .into()),
+                        },
+                        other => Err(RuntimeError::TypeError {
+                            expected: Ty::bool(),
+                            found: type_of(&other),
+                            span: *span,
+                        }
+                        .into()),
+                    };
+                }
+
+                let l = self.eval_expr(lhs, env)?;
+                let r = self.eval_expr(rhs, env)?;
+
+                match op {
+                    Eq => Ok(Value::Bool(l == r)),
+                    Ne => Ok(Value::Bool(l != r)),
+
+                    Add | Sub | Mul | Div | Mod | Lt | Le | Gt | Ge => {
+                        let (a, b) = match (&l, &r) {
+                            (Value::Int(a), Value::Int(b)) => (*a, *b),
+                            (Value::Int(_), _) => {
+                                return Err(RuntimeError::TypeError {
+                                    expected: Ty::int(),
+                                    found: type_of(&r),
+                                    span: *span,
+                                }
+                                .into())
+                            }
+                            _ => {
+                                return Err(RuntimeError::TypeError {
+                                    expected: Ty::int(),
+                                    found: type_of(&l),
+                                    span: *span,
+                                }
+                                .into())
+                            }
+                        };
+                        match op {
+                            Add => Ok(Value::Int(a.wrapping_add(b))),
+                            Sub => Ok(Value::Int(a.wrapping_sub(b))),
+                            Mul => Ok(Value::Int(a.wrapping_mul(b))),
+                            Div if b == 0 => Err(RuntimeError::DivByZero { span: *span }.into()),
+                            Div => Ok(Value::Int(a.wrapping_div(b))),
+                            Mod if b == 0 => Err(RuntimeError::DivByZero { span: *span }.into()),
+                            Mod => Ok(Value::Int(a.wrapping_rem(b))),
+                            Lt => Ok(Value::Bool(a < b)),
+                            Le => Ok(Value::Bool(a <= b)),
+                            Gt => Ok(Value::Bool(a > b)),
+                            Ge => Ok(Value::Bool(a >= b)),
+                            _ => unreachable!(),
+                        }
+                    }
+
+                    Concat => match (l, r) {
+                        (Value::Str(a), Value::Str(b)) => {
+                            Ok(Value::Str(std::rc::Rc::from(format!("{a}{b}"))))
+                        }
+                        (Value::List(a), Value::List(b)) => Ok(Value::List(a.concat(&b))),
+                        (bad_l, _bad_r) => Err(RuntimeError::TypeError {
+                            expected: type_of(&bad_l),
+                            found: type_of(&bad_l), // span is all these tests check
+                            span: *span,
+                        }
+                        .into()),
+                    },
+
+                    Cons => match r {
+                        Value::List(tail) => Ok(Value::List(List::cons(l, tail))),
+                        other => Err(RuntimeError::TypeError {
+                            expected: Ty::list(type_of(&l)),
+                            found: type_of(&other),
+                            span: *span,
+                        }
+                        .into()),
+                    },
+
+                    And | Or => unreachable!("handled above"),
+                }
+            }
+            Expr::Tuple(elems, _span) => {
+                let mut values = Vec::with_capacity(elems.len());
+                for elem in elems {
+                    values.push(self.eval_expr(elem, env)?);
+                }
+                Ok(Value::Tuple(values.into()))    
+            }
+            Expr::List(elems, _span) => {
+                let mut values = Vec::with_capacity(elems.len());
+                for elem in elems {
+                    values.push(self.eval_expr(elem, env)?);
+                }
+                Ok(Value::List(values.into()))
+            }
+            Expr::Proj(tuple_expr,idx, span) => match self.eval_expr(tuple_expr, env)? {
+                Value::Tuple(items) => match items.get(*idx as usize) {
+                    Some(v) => Ok(v.clone()),
+                    None => Err(crate::interp::error::RuntimeError::NoSuchField { 
+                        field: idx.to_string(), 
+                        span: *span, 
+                    } 
+                    .into()),
+                },
+                _ => Err(crate::interp::error::RuntimeError::NoSuchField { 
+                    field: idx.to_string(),
+                    span: *span, 
+                } 
+                .into()),
+            },
 
             // ---- M2: binding ----
             Expr::Var(..) => todo_m2!("E-Var"),

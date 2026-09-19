@@ -195,7 +195,7 @@ impl Interpreter {
                 for elem in elems {
                     values.push(self.eval_expr(elem, env)?);
                 }
-                Ok(Value::Tuple(values.into()))    
+                Ok(Value::Tuple(values.into()))
             }
             Expr::List(elems, _span) => {
                 let mut values = Vec::with_capacity(elems.len());
@@ -204,19 +204,19 @@ impl Interpreter {
                 }
                 Ok(Value::List(values.into()))
             }
-            Expr::Proj(tuple_expr,idx, span) => match self.eval_expr(tuple_expr, env)? {
+            Expr::Proj(tuple_expr, idx, span) => match self.eval_expr(tuple_expr, env)? {
                 Value::Tuple(items) => match items.get(*idx as usize) {
                     Some(v) => Ok(v.clone()),
-                    None => Err(crate::interp::error::RuntimeError::NoSuchField { 
-                        field: idx.to_string(), 
-                        span: *span, 
-                    } 
+                    None => Err(crate::interp::error::RuntimeError::NoSuchField {
+                        field: idx.to_string(),
+                        span: *span,
+                    }
                     .into()),
                 },
-                _ => Err(crate::interp::error::RuntimeError::NoSuchField { 
+                _ => Err(crate::interp::error::RuntimeError::NoSuchField {
                     field: idx.to_string(),
-                    span: *span, 
-                } 
+                    span: *span,
+                }
                 .into()),
             },
 

@@ -57,7 +57,7 @@ impl Interpreter {
                         Err(crate::interp::error::RuntimeError::TypeError {
                             expected: crate::ast::Ty::int(),
                             found: crate::interp::value::type_of(&other),
-                            span: *span, // was sub.span()
+                            span: *span,
                         }
                         .into())
                     }
@@ -65,7 +65,7 @@ impl Interpreter {
                         Err(crate::interp::error::RuntimeError::TypeError {
                             expected: crate::ast::Ty::bool(),
                             found: crate::interp::value::type_of(&other),
-                            span: *span, // was sub.span()
+                            span: *span,
                         }
                         .into())
                     }
@@ -171,7 +171,7 @@ impl Interpreter {
                         (Value::List(a), Value::List(b)) => Ok(Value::List(a.concat(&b))),
                         (bad_l, _bad_r) => Err(RuntimeError::TypeError {
                             expected: type_of(&bad_l),
-                            found: type_of(&bad_l), // span is all these tests check
+                            found: type_of(&bad_l), 
                             span: *span,
                         }
                         .into()),

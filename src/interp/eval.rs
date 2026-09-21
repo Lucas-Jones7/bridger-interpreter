@@ -171,7 +171,7 @@ impl Interpreter {
                         (Value::List(a), Value::List(b)) => Ok(Value::List(a.concat(&b))),
                         (bad_l, _bad_r) => Err(RuntimeError::TypeError {
                             expected: type_of(&bad_l),
-                            found: type_of(&bad_l), 
+                            found: type_of(&bad_l),
                             span: *span,
                         }
                         .into()),

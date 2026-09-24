@@ -221,8 +221,32 @@ impl Interpreter {
             },
 
             // ---- M2: binding ----
-            Expr::Var(..) => todo_m2!("E-Var"),
-            Expr::Block(..) => todo_m2!("E-Block / E-Let / E-Seq"),
+            Expr::Var(name, span) => match env.lookup(name) {
+                Some(v) => Ok(v),
+                None => Err(crate::interp::error::RuntimeError::UnboundVariable {
+                    name: name.clone(),
+                    span: *span,
+                }
+                .into()),
+            },
+            Expr::Block(stmts, tail, _span) => {
+                let mut env = env.clone();
+                for stmt in stmts {
+                    match stmt {
+                        crate::ast::Stmt::Let(name, _ty, rhs, _let_span) => {
+                            let v = self.eval_expr(rhs, &env)?;
+                            env = env.extend(name.clone(), v);
+                        }
+                        crate::ast::Stmt::Expr(e) => {
+                            self.eval_expr(e, &env)?;
+                        }
+                    }
+                }
+                match tail {
+                    Some(t) => self.eval_expr(t, &env),
+                    None => Ok(Value::Unit),
+                }
+            }
 
             // ---- M3: state & control ----
             Expr::If(..) => todo_m3!("E-If"),

@@ -30,6 +30,7 @@
 use super::Interpreter;
 use super::{Control, Env, Value};
 use crate::ast::Expr;
+use crate::interp::value;
 
 impl Interpreter {
     /// Evaluate `e` in environment `env`.
@@ -69,10 +70,19 @@ impl Interpreter {
                         }
                         .into())
                     }
-                    (crate::ast::UnOp::Ref, _) | (crate::ast::UnOp::Deref, _) => {
-                        todo_m3!("E-Ref / E-Deref")
+                    (crate::ast::UnOp::Ref, v) => {
+                        let loc = self.store.alloc(v);
+                        Ok(Value::Ref(loc))
                     }
-                }
+                    (crate::ast::UnOp::Deref, Value::Ref(loc)) => Ok(self.store.read(loc)),
+                    (crate::ast::UnOp::Deref, other) => {
+                        Err(crate::interp::error::RuntimeError::TypeError {
+                            expected: crate::ast::Ty::reference(crate::ast::Ty::meta(0)),
+                            found: crate::interp::value::type_of(&other),
+                            span: *span,
+                        }
+                        .into())                        }
+                    }
             }
             Expr::Binary(op, lhs, rhs, span) => {
                 use crate::ast::BinOp::*;
@@ -249,11 +259,94 @@ impl Interpreter {
             }
 
             // ---- M3: state & control ----
-            Expr::If(..) => todo_m3!("E-If"),
-            Expr::While(..) => todo_m3!("E-While"),
-            Expr::For(..) => todo_m3!("E-For"),
-            Expr::Assign(..) => todo_m3!("E-Assign"),
-            Expr::Return(..) => todo_m3!("E-Return"),
+            Expr::If(cond, then_branch, else_branch, span) => {
+                use crate::ast::Ty;
+                use crate::interp::error::RuntimeError;
+                use crate::interp::value::type_of;
+
+                match self.eval_expr(cond, env)? {
+                    Value::Bool(true) => self.eval_expr(then_branch, env),
+                    Value::Bool(false) => match else_branch {
+                        Some(e) => self.eval_expr(e, env),
+                        None => Ok(Value::Unit),
+                    },
+                    other => Err(RuntimeError::TypeError {
+                        expected: Ty::bool(),
+                        found: type_of(&other),
+                        span: *span,
+                    }
+                    .into()),
+                }
+            }
+
+            Expr::While(cond, body, span) => {
+                use crate::ast::Ty;
+                use crate::interp::error::RuntimeError;
+                use crate::interp::value::type_of;
+
+                loop {
+                    match self.eval_expr(cond, env)? {
+                        Value::Bool(true) => {
+                            self.eval_expr(body, env)?;
+                        }
+                        Value::Bool(false) => break,
+                        other => {
+                            return Err(RuntimeError::TypeError {
+                                expected: Ty::bool(),
+                                found: type_of(&other),
+                                span: *span 
+                            }
+                            .into())
+                        }
+                    }
+                }
+                Ok(Value::Unit)
+            }
+
+            Expr::For(name, iter_expr, body, span) => {
+                use crate::ast::Ty;
+                use crate::interp::error::RuntimeError;
+                use crate::interp::value::type_of;
+
+                match self.eval_expr(iter_expr, env)? {
+                    Value::List(list) => {
+                        for item in list.iter() {
+                            let loop_env = env.extend(name.clone(), item.clone());
+                            self.eval_expr(body, &loop_env)?;
+                        }
+                        Ok(Value::Unit)
+                    }
+                    other => Err(RuntimeError::TypeError {
+                        expected: Ty::list(Ty::meta(0)),
+                        found: type_of(&other),
+                        span: *span,
+                    }
+                    .into())
+                }
+            }
+            Expr::Assign(lhs, rhs, span) => {
+                use crate::ast::Ty;
+                use crate::interp::error::RuntimeError;
+                use crate::interp::value::type_of;
+
+                match self.eval_expr(lhs, env)? {
+                    Value::Ref(loc) => {
+                        let v = self.eval_expr(rhs, env)?;
+                        self.store.write(loc, v);
+                        Ok(Value::Unit)
+                    }
+                    other => Err(RuntimeError::TypeError {
+                        expected: Ty::reference(Ty::meta(0)),
+                        found: type_of(&other),
+                        span: *span,
+                    }
+                    .into())
+                }
+            }
+            Expr::Return(e, _span) => {
+                let v = self.eval_expr(e, env)?;
+                Err(Control::Return(v))
+            }
 
             // ---- M4: functions ----
             Expr::Lambda(..) => todo_m4!("E-Lam"),

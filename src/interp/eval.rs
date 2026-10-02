@@ -80,8 +80,9 @@ impl Interpreter {
                             found: crate::interp::value::type_of(&other),
                             span: *span,
                         }
-                        .into())                        }
+                        .into())
                     }
+                }
             }
             Expr::Binary(op, lhs, rhs, span) => {
                 use crate::ast::BinOp::*;
@@ -293,7 +294,7 @@ impl Interpreter {
                             return Err(RuntimeError::TypeError {
                                 expected: Ty::bool(),
                                 found: type_of(&other),
-                                span: *span 
+                                span: *span,
                             }
                             .into())
                         }
@@ -320,7 +321,7 @@ impl Interpreter {
                         found: type_of(&other),
                         span: *span,
                     }
-                    .into())
+                    .into()),
                 }
             }
             Expr::Assign(lhs, rhs, span) => {
@@ -339,7 +340,7 @@ impl Interpreter {
                         found: type_of(&other),
                         span: *span,
                     }
-                    .into())
+                    .into()),
                 }
             }
             Expr::Return(e, _span) => {

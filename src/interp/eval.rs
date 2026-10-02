@@ -30,7 +30,6 @@
 use super::Interpreter;
 use super::{Control, Env, Value};
 use crate::ast::Expr;
-use crate::interp::value;
 
 impl Interpreter {
     /// Evaluate `e` in environment `env`.

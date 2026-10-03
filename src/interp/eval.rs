@@ -179,6 +179,18 @@ impl Interpreter {
                             Ok(Value::Str(std::rc::Rc::from(format!("{a}{b}"))))
                         }
                         (Value::List(a), Value::List(b)) => Ok(Value::List(a.concat(&b))),
+                        (Value::Str(_), bad_r) => Err(RuntimeError::TypeError {
+                            expected: Ty::str(),
+                            found: type_of(&bad_r),
+                            span: *span,
+                        }
+                        .into()),
+                        (Value::List(_), bad_r) => Err(RuntimeError::TypeError {
+                            expected: Ty::list(Ty::meta(0)),
+                            found: type_of(&bad_r),
+                            span: *span,
+                        }
+                        .into()),
                         (bad_l, _bad_r) => Err(RuntimeError::TypeError {
                             expected: type_of(&bad_l),
                             found: type_of(&bad_l),

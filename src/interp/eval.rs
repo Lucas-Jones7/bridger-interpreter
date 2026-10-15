@@ -135,8 +135,18 @@ impl Interpreter {
                 let r = self.eval_expr(rhs, env)?;
 
                 match op {
-                    Eq => Ok(Value::Bool(l == r)),
-                    Ne => Ok(Value::Bool(l != r)),
+                    Eq | Ne => {
+                        if let Some(t) = crate::interp::value::uncomparable(&l).or_else(|| crate::interp::value::uncomparable(&r))
+                        {
+                            return Err(RuntimeError::NotComparable {
+                                found: t,
+                                span: *span,
+                            }
+                            .into());
+                        }
+                        let same = l == r;
+                        Ok(Value::Bool(if matches!(op, Eq) { same } else { !same }))
+                    }
 
                     Add | Sub | Mul | Div | Mod | Lt | Le | Gt | Ge => {
                         let (a, b) = match (&l, &r) {
@@ -361,8 +371,63 @@ impl Interpreter {
             }
 
             // ---- M4: functions ----
-            Expr::Lambda(..) => todo_m4!("E-Lam"),
-            Expr::Call(..) => todo_m4!("E-App (dispatch Bridger vs. Native closure)"),
+            Expr::Lambda(params, body, _span) => {
+                let names: Vec<crate::ast::Name> = params.iter().map(|p| p.name.clone()).collect();
+                Ok(Value::Closure(std::rc::Rc::new(
+                    crate::interp::value::Closure::Bridger {
+                        params: names,
+                        body: (**body).clone(),
+                        env: env.clone(),
+                    },
+                )))
+            }
+            Expr::Call(callee, args, span) => {
+                use crate::interp::error::RuntimeError;
+                use crate::interp::value::{type_of, Closure};
+
+                let closure = match self.eval_expr(callee, env)? {
+                    Value::Closure(c) => c,
+                    other => {
+                        return Err(RuntimeError::NotAFunction {
+                            found: type_of(&other),
+                            span: *span, 
+                        }
+                        .into())
+                    }
+                };
+
+                let mut vals = Vec::with_capacity(args.len());
+                for a in args {
+                    vals.push(self.eval_expr(a, env)?);
+                }
+
+                match &*closure {
+                    Closure::Native(id) => self.eval_prelude(*id, vals, *span).map_err(Control::from),
+                    Closure::Bridger { params, body, env: captured } => {
+                        if params.len() != vals.len() {
+                            return Err(RuntimeError::ArityMismatch {
+                                expected: params.len(),
+                                found: vals.len(),
+                                span: *span,
+                            }
+                            .into());
+                        }
+                        let mut call_env = captured.clone();
+                        for (p, v) in params.iter().zip(vals) {
+                            call_env = call_env.extend(p.clone(), v);
+                        }
+
+                        self.enter_call(*span)?;
+                        let result = self.eval_expr(body, &call_env);
+                        self.leave_call();
+
+                        match result {
+                            Err(Control::Return(v)) => Ok(v),
+                            other => other,
+                        }
+                    }
+                }
+            }
 
             // ---- M6: relations (queries go through `self.solutions`, engine.rs) ----
             Expr::Relation(..) => todo_m6!("E-Add / E-Clear / E-Solutions / E-Query"),

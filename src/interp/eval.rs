@@ -136,7 +136,8 @@ impl Interpreter {
 
                 match op {
                     Eq | Ne => {
-                        if let Some(t) = crate::interp::value::uncomparable(&l).or_else(|| crate::interp::value::uncomparable(&r))
+                        if let Some(t) = crate::interp::value::uncomparable(&l)
+                            .or_else(|| crate::interp::value::uncomparable(&r))
                         {
                             return Err(RuntimeError::NotComparable {
                                 found: t,
@@ -390,7 +391,7 @@ impl Interpreter {
                     other => {
                         return Err(RuntimeError::NotAFunction {
                             found: type_of(&other),
-                            span: *span, 
+                            span: *span,
                         }
                         .into())
                     }
@@ -402,8 +403,14 @@ impl Interpreter {
                 }
 
                 match &*closure {
-                    Closure::Native(id) => self.eval_prelude(*id, vals, *span).map_err(Control::from),
-                    Closure::Bridger { params, body, env: captured } => {
+                    Closure::Native(id) => {
+                        self.eval_prelude(*id, vals, *span).map_err(Control::from)
+                    }
+                    Closure::Bridger {
+                        params,
+                        body,
+                        env: captured,
+                    } => {
                         if params.len() != vals.len() {
                             return Err(RuntimeError::ArityMismatch {
                                 expected: params.len(),
